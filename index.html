@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>汇率展示面板</title>
+  <style>
+    :root {
+      --bg: #0b1320;
+      --panel: #111a2b;
+      --muted: #93a0b5;
+      --text: #e8eef7;
+      --accent: #4da3ff;
+      --accent-2: #3bd1b5;
+      --danger: #ff6b6b;
+      --border: #1f2a40;
+      --shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.02);
+      --radius: 12px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: radial-gradient(1200px 600px at 20% -10%, #1c2742 0%, #0b1320 55%, #07101e 100%), var(--bg);
+      color: var(--text); font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, PingFang SC, Microsoft YaHei, Helvetica, Arial, sans-serif;
+      min-height: 100vh; padding: 24px;
+    }
+    .shell {
+      max-width: 980px; margin: 0 auto; padding: 24px;
+      background: linear-gradient(180deg, rgba(255,255,255,.02) 0%, rgba(255,255,255,.00) 100%), var(--panel);
+      border: 1px solid var(--border); box-shadow: var(--shadow); border-radius: var(--radius);
+    }
+    h1 {
+      margin: 0 0 8px; font-size: 20px; letter-spacing: .2px; font-weight: 650;
+    }
+    .sub { margin: 0 0 20px; color: var(--muted); }
+    .toolbar {
+      display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 12px; align-items: end;
+      background: rgba(255,255,255,.02); border: 1px solid var(--border); padding: 16px; border-radius: 10px;
+    }
+    label { display: block; font-size: 12px; color: var(--muted); margin: 0 0 6px; }
+    select, input[type="number"], input[type="text"] {
+      width: 100%; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--border);
+      background: #0c1526; color: var(--text); outline: none;
+    }
+    .btn {
+      padding: 10px 14px; border: 1px solid var(--border); background: #0e1930; color: var(--text);
+      border-radius: 9px; cursor: pointer; user-select: none; white-space: nowrap;
+    }
+    .btn.primary { background: linear-gradient(180deg, #2f6bff, #1f54cf); border-color: rgba(0,0,0,.25); }
+    .btn.ghost { background: transparent; }
+    .btn:disabled { opacity: .6; cursor: not-allowed; }
+    .targets {
+      margin-top: 14px; display: grid; grid-template-columns: repeat(6, minmax(120px,1fr)); gap: 8px;
+    }
+    .chip {
+      display: flex; align-items: center; gap: 8px;
+      background: #0d182d; border: 1px solid var(--border); padding: 8px 10px; border-radius: 999px;
+    }
+    .chip input { margin: 0; }
+    .row {
+      display: grid; grid-template-columns: 120px 1fr auto; gap: 12px; align-items: center;
+    }
+    .status {
+      margin-top: 10px; color: var(--muted); display: flex; gap: 10px; align-items: center;
+    }
+    .status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-2); display: inline-block; }
+    .status.error .dot { background: var(--danger); }
+    table {
+      width: 100%; border-collapse: collapse; margin-top: 16px; overflow: hidden; border-radius: 10px;
+      border: 1px solid var(--border); background: #0c1526;
+    }
+    thead th {
+      text-align: left; font-weight: 600; padding: 12px; font-size: 12px; color: var(--muted);
+      background: rgba(255,255,255,.02); border-bottom: 1px solid var(--border);
+    }
+    tbody td { padding: 12px; border-top: 1px solid var(--border); }
+    tbody tr:hover { background: rgba(255,255,255,.03); }
+    .rate { color: var(--accent); font-variant-numeric: tabular-nums; }
+    .amt { font-variant-numeric: tabular-nums; }
+    .muted { color: var(--muted); }
+    .tools { display: flex; gap: 8px; }
+    @media (max-width: 960px) {
+      .toolbar { grid-template-columns: 1fr 1fr; }
+      .targets { grid-template-columns: repeat(3, minmax(120px,1fr)); }
+      .row { grid-template-columns: 100px 1fr auto; }
+    }
+  </style>
+  <script>
+    // Force light CSP-like behavior for local files: no inline event handlers used.
+  </script>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https:; connect-src https:; img-src 'self' data: https:; style-src 'unsafe-inline' 'self'; script-src 'unsafe-inline' 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'">
+  <meta name="color-scheme" content="dark light">
+</head>
+<body>
+  <div class="shell">
+    <h1>汇率展示</h1>
+    <p class="sub">选择基准货币和金额，勾选想看的目标货币，在线获取最新汇率（离线自动兜底）。</p>
+
+    <div class="toolbar">
+      <div>
+        <label>基准货币</label>
+        <select id="base"></select>
+      </div>
+      <div>
+        <label>金额</label>
+        <input id="amount" type="number" step="0.01" min="0" value="100" />
+      </div>
+      <div>
+        <label>快速筛选</label>
+        <div class="tools">
+          <button class="btn ghost" id="selectCommon">常用</button>
+          <button class="btn ghost" id="selectAll">全选</button>
+          <button class="btn ghost" id="clearAll">清空</button>
+        </div>
+      </div>
+      <div>
+        <button class="btn primary" id="refresh">获取最新汇率</button>
+      </div>
+    </div>
+
+    <div class="targets" id="targets"></div>
+
+    <div class="status" id="status">
+      <span class="dot"></span>
+      <span id="statusText">等待查询...</span>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>货币</th>
+          <th>汇率（1 <span id="baseLabel">USD</span>）</th>
+          <th>换算金额</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+
+  <script>
+    // ---- 配置与数据 ----
+    const CURRENCIES = [
+      ["USD","美元"], ["EUR","欧元"], ["CNY","人民币"], ["JPY","日元"], ["GBP","英镑"],
+      ["HKD","港币"], ["TWD","新台币"], ["KRW","韩元"], ["SGD","新元"], ["AUD","澳元"],
+      ["NZD","纽元"], ["CAD","加元"], ["CHF","瑞郎"], ["SEK","瑞典克朗"], ["NOK","挪威克朗"],
+      ["DKK","丹麦克朗"], ["PLN","兹罗提"], ["CZK","捷克克朗"], ["HUF","福林"], ["TRY","里拉"],
+      ["BRL","雷亚尔"], ["MXN","比索"], ["THB","泰铢"], ["IDR","印尼盾"], ["MYR","马来西亚林吉特"],
+      ["PHP","菲律宾比索"], ["INR","卢比"], ["ZAR","南非兰特"], ["AED","迪拉姆"], ["SAR","里亚尔"]
+    ];
+    const COMMON = ["USD","EUR","CNY","JPY","GBP","HKD","SGD","KRW","AUD","CAD","CHF"];
+    const FALLBACK = {
+      base: "USD",
+      date: "2024-12-31",
+      rates: {
+        EUR: 0.92, CNY: 7.15, JPY: 156.8, GBP: 0.79, HKD: 7.80, SGD: 1.35, KRW: 1330.0,
+        AUD: 1.50, CAD: 1.36, CHF: 0.86, NZD: 1.64, INR: 83.2, THB: 34.5, AED: 3.67
+      }
+    };
+
+    // ---- 元素与状态 ----
+    const elBase = document.getElementById('base');
+    const elAmount = document.getElementById('amount');
+    const elTargets = document.getElementById('targets');
+    const elRefresh = document.getElementById('refresh');
+    const elStatus = document.getElementById('status');
+    const elStatusText = document.getElementById('statusText');
+    const elTbody = document.getElementById('tbody');
+    const elBaseLabel = document.getElementById('baseLabel');
+    const btnCommon = document.getElementById('selectCommon');
+    const btnAll = document.getElementById('selectAll');
+    const btnClear = document.getElementById('clearAll');
+
+    const state = {
+      base: 'USD',
+      amount: 100,
+      selected: new Set(COMMON)
+    };
+
+    // ---- 工具函数 ----
+    function saveState() {
+      try {
+        const payload = { base: state.base, amount: +state.amount, selected: [...state.selected] };
+        localStorage.setItem('fx-viewer', JSON.stringify(payload));
+      } catch {}
+    }
+    function loadState() {
+      try {
+        const raw = localStorage.getItem('fx-viewer');
+        if (!raw) return;
+        const obj = JSON.parse(raw);
+        if (obj.base) state.base = obj.base;
+        if (typeof obj.amount === 'number' && !Number.isNaN(obj.amount)) state.amount = obj.amount;
+        if (Array.isArray(obj.selected)) state.selected = new Set(obj.selected);
+      } catch {}
+    }
+    function formatNum(n, min=2, max=6) {
+      return new Intl.NumberFormat('zh-CN', { minimumFractionDigits: min, maximumFractionDigits: max }).format(n);
+    }
+    function setStatus(txt, ok=true, hint='') {
+      elStatus.classList.toggle('error', !ok);
+      elStatus.querySelector('.dot').style.background = ok ? 'var(--accent-2)' : 'var(--danger)';
+      elStatusText.textContent = txt + (hint ? '（' + hint + '）' : '');
+    }
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    // ---- 渲染 ----
+    function buildBaseOptions() {
+      elBase.innerHTML = CURRENCIES
+        .map(([code, name]) => `<option value="${code}">${code} - ${name}</option>`)
+        .join('');
+      elBase.value = state.base;
+    }
+    function buildTargetChips() {
+      elTargets.innerHTML = CURRENCIES.map(([code, name]) => {
+        const checked = state.selected.has(code) ? 'checked' : '';
+        return `
+          <label class="chip" title="${code}">
+            <input type="checkbox" data-code="${code}" ${checked}/>
+            <span>${code}</span>
+            <span class="muted">${name}</span>
+          </label>
+        `;
+      }).join('');
+      elTargets.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+        cb.addEventListener('change', () => {
+          const code = cb.dataset.code;
+          if (cb.checked) state.selected.add(code); else state.selected.delete(code);
+          saveState();
+          renderLast(); // 仅本地刷新表格
+        });
+      });
+    }
+
+    // ---- 网络 ----
+    async function fetchRates(base, targets) {
+      // 使用 Frankfurter API（免 Key, 支持 CORS）
+      // https://api.frankfurter.app/latest?from=USD&to=EUR,JPY
+      const controller = new AbortController();
+      const toParam = targets && targets.length ? `&to=${targets.join(',')}` : '';
+      const url = `https://api.frankfurter.app/latest?from=${encodeURIComponent(base)}${toParam}`;
+      const id = setTimeout(() => controller.abort(), 8000);
+      try {
+        const res = await fetch(url, { signal: controller.signal, cache: 'no-store' });
+        clearTimeout(id);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        // Frankfurter 不包含 base 自身的 1，手动补上
+        return {
+          base: data.base,
+          date: data.date,
+          rates: { [data.base]: 1, ...data.rates }
+        };
+      } catch (err) {
+        clearTimeout(id);
+        // 兜底：将内置 USD 基准的样本转换到目标 base
+        const fb = deriveFallbackForBase(base);
+        return fb;
+      }
+    }
+
+    function deriveFallbackForBase(base) {
+      // 已有 USD->X 的样本。若 base 不是 USD，做交叉换算：
+      // rate(base->X) = rate(USD->X) / rate(USD->base)
+      const usdRates = { ...FALLBACK.rates, USD: 1 };
+      if (base === 'USD' || !usdRates[base]) {
+        return { base: 'USD', date: FALLBACK.date, rates: usdRates };
+      }
+      const out = { USD: 1 / usdRates[base] };
+      for (const [ccy, r] of Object.entries(usdRates)) {
+        if (ccy === base) { out[ccy] = 1; continue; }
+        out[ccy] = r / usdRates[base];
+      }
+      return { base, date: FALLBACK.date, rates: out };
+    }
+
+    // ---- 主流程 ----
+    let lastData = null;
+
+    function renderTable(data) {
+      elBaseLabel.textContent = data.base;
+      const amount = +state.amount || 0;
+      const use = [...state.selected].filter(c => data.rates[c] != null);
+      // 保证基准货币显示在表头 label，表格里不重复展示
+      const rows = use
+        .sort((a,b) => a.localeCompare(b))
+        .map(code => {
+          const rate = data.rates[code];
+          const conv = amount * rate;
+          return `
+            <tr>
+              <td><strong>${code}</strong> <span class="muted">${(CURRENCIES.find(c=>c[0]===code)||['', ''])[1] || ''}</span></td>
+              <td class="rate">${formatNum(rate, 4, 6)}</td>
+              <td class="amt">${formatNum(conv, 2, 2)}</td>
+            </tr>
+          `;
+        }).join('');
+      elTbody.innerHTML = rows || `
+        <tr><td colspan="3" class="muted">未选择目标货币，或该基准货币暂无对应汇率。</td></tr>
+      `;
+    }
+
+    function renderLast() {
+      if (lastData) renderTable(lastData);
+    }
+
+    async function runQuery() {
+      setStatus('正在获取最新汇率...', true);
+      elRefresh.disabled = true;
+      try {
+        const targets = [...state.selected];
+        const data = await fetchRates(state.base, targets);
+        lastData = data;
+        renderTable(data);
+        const hint = data.date ? `更新日期 ${data.date}` : '';
+        setStatus('获取成功', true, hint);
+      } catch (e) {
+        setStatus('获取失败', false, e?.message || '');
+      } finally {
+        elRefresh.disabled = false;
+      }
+    }
+
+    // ---- 事件与初始化 ----
+    function bindEvents() {
+      elBase.addEventListener('change', () => {
+        state.base = elBase.value;
+        saveState();
+        runQuery();
+      });
+      elAmount.addEventListener('input', () => {
+        state.amount = elAmount.value;
+        saveState();
+        renderLast();
+      });
+      elRefresh.addEventListener('click', runQuery);
+
+      btnCommon.addEventListener('click', () => {
+        state.selected = new Set(COMMON);
+        saveState(); buildTargetChips(); renderLast();
+      });
+      btnAll.addEventListener('click', () => {
+        state.selected = new Set(CURRENCIES.map(([c]) => c));
+        saveState(); buildTargetChips(); renderLast();
+      });
+      btnClear.addEventListener('click', () => {
+        state.selected = new Set();
+        saveState(); buildTargetChips(); renderLast();
+      });
+    }
+
+    (async function boot() {
+      loadState();
+      buildBaseOptions();
+      buildTargetChips();
+      bindEvents();
+      elBase.value = state.base;
+      elAmount.value = state.amount;
+      await sleep(60);
+      runQuery();
+    })();
+  </script>
+</body>
+</html>
